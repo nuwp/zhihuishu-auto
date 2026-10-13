@@ -1,0 +1,18 @@
+# 依赖（本项目其实不需要 —— 扩展是纯 IIFE，没有打包步骤；
+# 但测试里用到的 jsdom 沙箱装在系统临时目录，万一有人装到本地就别带进来）
+node_modules/
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# 日志与临时产物
+*.log
+*.tmp
+zhs-*.png
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini

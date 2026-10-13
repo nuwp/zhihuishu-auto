@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="wrap">
+
+    <header class="head">
+      <div class="brand">
+        <span id="brandDot" class="dot"></span>
+        <h1>知到自动助手</h1>
+      </div>
+      <label class="switch master" title="总开关">
+        <input type="checkbox" id="enabled">
+        <span class="track"><span class="knob"></span></span>
+      </label>
+    </header>
+
+    <section class="card">
+      <div class="row">
+        <span id="stateBadge" class="badge">待命</span>
+        <span id="stateText" class="muted ellipsis">正在连接页面…</span>
+      </div>
+      <div class="progress"><div id="bar" class="bar"></div></div>
+      <div class="meta">
+        <span>进度 <b id="pct">--</b></span>
+        <span>连播 <b id="chapters">0</b> 集</span>
+        <span>观看 <b id="watch">0m</b></span>
+      </div>
+      <div class="meta">
+        <span>弹题 <b id="quizTotal">0</b></span>
+        <span>命中 <b id="quizBank">0</b></span>
+        <span>AI <b id="quizAI">0</b></span>
+        <span>枚举 <b id="quizBrute">0</b></span>
+        <span>未解 <b id="quizFail">0</b></span>
+      </div>
+      <div class="meta">
+        <span>目录 <b id="plDone">0</b>/<b id="plTotal">0</b></span>
+        <span>题库 <b id="bankSize">0</b> 题</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardTitle">运行</div>
+      <label class="line"><input type="checkbox" id="autoNext"><span>播完自动切下一集</span></label>
+      <label class="line"><input type="checkbox" id="autoQuiz"><span>自动作答弹题</span></label>
+      <label class="line"><input type="checkbox" id="autoPlay"><span>被暂停时自动恢复播放</span></label>
+      <label class="line"><input type="checkbox" id="mute"><span>静音播放</span></label>
+      <label class="line"><input type="checkbox" id="keepFocus"><span>后台保活（防止标签页被冻结）</span></label>
+      <div class="line slider-line" title="1.8× 是平台写死的异常判定线：播放回调里一旦看到 playbackRate > 1.8，会立刻暂停、弹出「检测到异常脚本」并在 3 秒后把页面踢回首页。">
+        <span class="lbl">倍速 ≤1.8</span>
+        <input type="range" id="playbackRate" min="1" max="1.8" step="0.1">
+        <span class="val" id="rateVal">1.0x</span>
+      </div>
+      <div class="line slider-line">
+        <span class="lbl">连播上限</span>
+        <input type="range" id="maxChapters" min="0" max="30" step="1">
+        <span class="val" id="maxVal">不限</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardTitle">
+        <span>模式</span>
+      </div>
+      <div class="line" title="知到有两套完全不同的答题场景，页面结构和操作方式都不一样。两者**必须互斥** —— 它们共用同一个网页端 AI 标签页，同时问会互相踩（一处刚把题目打进去，另一处把输入框清了）。所以这里是单选，从配置层面就把「同时开」堵死。">
+        <span class="lbl">答题场景</span>
+        <select id="mode" class="select">
+          <option value="video">视频（课中弹题）</option>
+          <option value="ability">能力提升（整页卷子）</option>
+        </select>
+      </div>
+      <div class="hint modeHint" id="modeHint">
+        当前只跑其中一套；另一套的入口会被停用，避免两边抢同一个 AI 页。
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardTitle">答题</div>
+      <label class="line"><input type="checkbox" id="useBank"><span>题库优先（已做过的题直接复用答案）</span></label>
+      <label class="line" title="默认关闭。组合枚举 = 把同一道题反复提交，而智能体的网页版对重复提问会拒答（回一句「这个问题我已经回答过了」或干脆不理你）。所以默认路线是「网页 AI → 题库」，两级都不中就交给你手动答，而不是空转 + 反复触发平台判错回退。想恢复硬试就把它打开。"><input type="checkbox" id="bruteForce"><span>组合枚举（默认关：网页端不接受重复提问）</span></label>
+      <label class="line"><input type="checkbox" id="learnAnswers"><span>答对后记入题库</span></label>
+      <label class="line"><input type="checkbox" id="retryOnWrong"><span>答错后清空重选</span></label>
+      <label class="line" title="「能力提升」模式下生效：进到卷子页就自动整套答完。"><input type="checkbox" id="abilityAuto"><span>能力提升：进页面就自动整套答</span></label>
+      <label class="line" title="「能力提升」模式下生效：答完自动点「提交」。不勾就只填答案、留给你自己交卷。"><input type="checkbox" id="abilityAutoSubmit"><span>能力提升：答完自动交卷</span></label>
+      <div class="line slider-line">
+        <span class="lbl">多选最大组合</span>
+        <input type="range" id="maxComboSize" min="1" max="6" step="1">
+        <span class="val" id="comboVal">3</span>
+      </div>
+      <div class="line slider-line">
+        <span class="lbl">提交等待</span>
+        <input type="range" id="resultWaitMs" min="1500" max="8000" step="500">
+        <span class="val" id="waitVal">3.5s</span>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardTitle">
+        <span>网页 AI 抢答</span>
+        <span class="muted" id="aiPill">待命</span>
+      </div>
+      <label class="line"><input type="checkbox" id="askWebAI"><span>用网页版 AI 答题</span></label>
+      <label class="line"><input type="checkbox" id="webAIFirst"><span>AI 优先（排在题库前面）</span></label>
+      <div class="line slider-line">
+        <span class="lbl">站点</span>
+        <select id="webAIProvider" class="select">
+          <option value="auto">自动（哪个开着用哪个）</option>
+          <option value="gemini">Gemini（谷歌）</option>
+          <option value="deepseek">DeepSeek</option>
+          <option value="doubao">豆包</option>
+          <option value="kimi">Kimi</option>
+          <option value="tongyi">通义千问</option>
+          <option value="yuanbao">腾讯元宝</option>
+        </select>
+      </div>
+      <div class="line slider-line" title="等 AI 回包的上限。免费的 DeepSeek 想复杂一点的题经常要 40~70 秒，所以默认给到 90 秒。到点没等到就落回题库；组合枚举现在是关着的，所以不会空转。">
+        <span class="lbl">应答等待</span>
+        <input type="range" id="askWaitMs" min="15000" max="180000" step="15000">
+        <span class="val" id="askWaitVal">90s</span>
+      </div>
+      <label class="line"><input type="checkbox" id="askNewTab"><span>没打开就自动新开一个 AI 标签页</span></label>
+      <label class="line"><input type="checkbox" id="askCache"><span>同一道题复用上次问到的答案</span></label>
+      <div class="hint">
+        默认顺序：<b>网页 AI → 题库 → 枚举</b>。想在 AI 上省时间就关掉「AI 优先」——
+        那样做过的题会先走题库秒过，没见过的题才去问 AI。<br>
+        需要在对应站点<b>已登录</b>。扩展复用你打开的标签页，没有就后台新开（不抢焦点），
+        问完把答案扣回来；等不到答案就自动落回下一级，不会卡住整节课。
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardTitle">动作</div>
+      <div class="btns">
+        <button id="btnSolve" class="btn">立即答题</button>
+        <button id="btnNext" class="btn">切下一集</button>
+        <button id="btnRescan" class="btn">重扫目录</button>
+        <button id="btnProbe" class="btn">探测弹题</button>
+        <button id="btnAskAI" class="btn">问一次 AI</button>
+        <button id="btnAiSendTest" class="btn">试发一条</button>
+        <button id="btnDumpQuiz" class="btn">看当前这道题</button>
+        <button id="btnDumpPlaylist" class="btn">看目录结构</button>
+        <button id="btnInject" class="btn">重注入脚本</button>
+        <button id="btnReload" class="btn ghost">刷新页面</button>
+        <button id="btnAiDiag" class="btn ghost">AI 链路诊断</button>
+      </div>
+      <div class="btns">
+        <button id="btnExport" class="btn ghost">导出题库</button>
+        <button id="btnClearBank" class="btn ghost danger">清空题库</button>
+        <button id="btnClearAiCache" class="btn ghost danger">清空 AI 缓存</button>
+        <button id="btnCdp" class="btn ghost">高保真点击</button>
+      </div>
+      <div class="btns">
+        <button id="btnReloadExt" class="btn ghost">重载扩展（改代码后用）</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <div class="cardTitle">
+        <span>日志</span>
+        <label class="mini"><input type="checkbox" id="verboseLog"><span>详细</span></label>
+      </div>
+      <div class="logWrap">
+        <pre id="logs" class="logs">暂无日志</pre>
+        <button id="logFollow" class="logFollow" hidden title="回到最新一行">↓ 最新</button>
+      </div>
+    </section>
+
+    <footer class="foot">
+      <span id="footNote">v<span id="verNum">?</span></span>
+      <span id="tabUrl" class="ellipsis"></span>
+    </footer>
+  </div>
+
+  <script src="../shared/defaults.js"></script>
+  <script src="../shared/web-ai.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

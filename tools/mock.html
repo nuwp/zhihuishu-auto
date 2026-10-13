@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>知到自动助手 — 本地模拟页</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: #0f1319;
+    color: #e6edf3;
+    font: 14px/1.6 "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  }
+  .app { display: flex; min-height: 100vh; }
+
+  /* 目录 */
+  .catalogue {
+    width: 300px;
+    background: #151b24;
+    border-right: 1px solid #263040;
+    padding: 16px 0;
+    flex: 0 0 300px;
+  }
+  .catalogue h2 { font-size: 13px; color: #8b98a8; margin: 0 16px 12px; letter-spacing: 1px; }
+  .catalogue_list { display: flex; flex-direction: column; }
+  .clearfix.video {
+    padding: 11px 16px;
+    border-left: 3px solid transparent;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #b9c4d2;
+  }
+  .clearfix.video:hover { background: #1b2330; color: #e6edf3; }
+  .clearfix.video.current_play { background: #1c2735; border-left-color: #4f9cf9; color: #fff; }
+  .clearfix.video .video_titbox { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .clearfix.video .time_icofinish { color: #3fb950; font-size: 12px; }
+  .clearfix.video .dur { color: #5b6675; font-size: 12px; }
+
+  /* 播放区 */
+  .stage { flex: 1; padding: 24px 28px; display: flex; flex-direction: column; gap: 14px; }
+  .stage h1 { font-size: 17px; margin: 0; }
+  .screen {
+    background: #000;
+    border-radius: 10px;
+    aspect-ratio: 16 / 9;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+    position: relative;
+    border: 1px solid #263040;
+  }
+  .screen .fake {
+    font-size: 15px;
+    color: #4a5568;
+    text-align: center;
+    pointer-events: none;
+  }
+  .screen .fake b { display: block; font-size: 44px; color: #2a3444; }
+
+  .readout {
+    display: flex;
+    gap: 18px;
+    flex-wrap: wrap;
+    font-size: 13px;
+    color: #8b98a8;
+  }
+  .readout b { color: #e6edf3; }
+
+  .ctrl { display: flex; gap: 8px; flex-wrap: wrap; }
+  button {
+    padding: 8px 14px;
+    font: inherit;
+    font-size: 13px;
+    color: #e6edf3;
+    background: #1c2330;
+    border: 1px solid #2c3648;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  button:hover { background: #232c3b; }
+  .hint {
+    font-size: 12px;
+    color: #5b6675;
+    border-left: 2px solid #2a3444;
+    padding-left: 10px;
+    line-height: 1.8;
+  }
+  .hint code { color: #7fb2f0; }
+
+  /* ── 模拟知到的弹题浮层 ── */
+  .el-dialog__wrapper {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, .55);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2001;
+  }
+  .el-dialog {
+    width: 520px;
+    background: #1a212c;
+    border-radius: 12px;
+    border: 1px solid #2c3648;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, .6);
+    overflow: hidden;
+  }
+  .el-dialog__header {
+    padding: 14px 20px;
+    border-bottom: 1px solid #2c3648;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .el-dialog__title { font-size: 14px; font-weight: 600; }
+  .el-dialog__close { cursor: pointer; color: #5b6675; font-size: 18px; line-height: 1; }
+  .el-dialog__body { padding: 18px 20px 20px; }
+
+  .subject_describe {
+    font-size: 14.5px;
+    line-height: 1.7;
+    margin: 0 0 14px;
+    color: #e6edf3;
+  }
+  .subject_node { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .subject_node_item {
+    padding: 10px 14px;
+    border: 1px solid #2c3648;
+    border-radius: 8px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13.5px;
+    color: #cbd5e1;
+    transition: background .12s, border-color .12s;
+  }
+  .subject_node_item:hover { background: #212a38; }
+  .subject_node_item .tag {
+    width: 20px; height: 20px; flex: 0 0 20px;
+    border-radius: 50%;
+    border: 1px solid #3a4658;
+    display: grid; place-items: center;
+    font-size: 11px; color: #8b98a8;
+  }
+  .subject_node_item.active {
+    border-color: #4f9cf9;
+    background: rgba(79, 156, 249, .1);
+    color: #fff;
+  }
+  .subject_node_item.active .tag { background: #4f9cf9; border-color: #4f9cf9; color: #0f1319; }
+
+  .subject_footer {
+    margin-top: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .subject_feedback { font-size: 13px; font-weight: 600; }
+  .subject_feedback.ok { color: #3fb950; }
+  .subject_feedback.bad { color: #f85149; }
+  .submit_btn {
+    background: #2f6fd0;
+    border-color: #3d7dd8;
+    padding: 8px 24px;
+  }
+  .submit_btn:hover { background: #3d7dd8; }
+  .submit_btn:disabled { opacity: .45; cursor: default; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <aside class="catalogue">
+    <h2>课程目录</h2>
+    <div class="catalogue_list" id="catalogue"></div>
+  </aside>
+
+  <main class="stage">
+    <h1 id="lessonTitle">1.1 加载中…</h1>
+
+    <div class="screen">
+      <div class="fake"><b>▶</b><span id="screenText">模拟播放器</span></div>
+      <video id="player" style="position:absolute;width:1px;height:1px;opacity:0"></video>
+    </div>
+
+    <div class="readout">
+      <span>进度 <b id="rTime">0.0 / 0.0 s</b></span>
+      <span>状态 <b id="rState">暂停</b></span>
+      <span>倍速 <b id="rRate">1</b></span>
+      <span>弹题 <b id="rQuiz">无</b></span>
+      <span>接管 <b id="rHook">未接管</b></span>
+      <span>反检测 <b id="rTrust">--</b></span>
+    </div>
+    <div class="readout" style="font-size:12px;color:#5b6675">
+      <span>诊断 <b id="rDiag" style="color:#8b98a8;font-weight:400">--</b></span>
+    </div>
+
+    <div class="ctrl">
+      <button id="btnPlay">播放 / 暂停</button>
+      <button id="btnNearEnd">跳到片尾（3s）</button>
+      <button id="btnFireQuiz">立即出题</button>
+      <button id="btnAuto">自动跑：开</button>
+    </div>
+
+    <div class="hint">
+      <b>这个页面用来离线验证扩展。</b><br>
+      1) 先在 <code>chrome://extensions</code> 载入 <code>zhihuishu-auto</code> 目录；<br>
+      2) 回到本页刷新，插件会自动接管（标题栏图标显示进度百分比）；<br>
+      3) 播放视频 → 到点自动弹题 → 观察它自己把答案试出来；<br>
+      4) 视频跑完 → 自动点下一节，已完成的节点会打上 ✔。<br>
+      题目答案每次刷新都是随机的，所以题库命中率会真实反映「枚举 → 记库 → 复用」这条链路。
+    </div>
+  </main>
+</div>
+
+<!-- ── 弹题浮层（结构对齐知到的 Element UI 弹窗） ── -->
+<div class="el-dialog__wrapper" id="quizWrap" style="display:none">
+  <div class="el-dialog">
+    <div class="el-dialog__header">
+      <span class="el-dialog__title">课堂互动</span>
+      <span class="el-dialog__close" id="quizClose">×</span>
+    </div>
+    <div class="el-dialog__body">
+      <div class="topic-item">
+        <p class="subject_describe" id="quizStem"></p>
+        <ul class="subject_node" id="quizOptions"></ul>
+        <div class="subject_footer">
+          <span class="subject_feedback" id="quizFeedback"></span>
+          <button class="submit_btn" id="quizSubmit">提交</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════
+//  假视频：真实 <video> 元素的 duration / paused / currentTime
+//  都不可写，这里在实例上用 defineProperty 覆盖 getter，
+//  让 content script 读到一套可编程的状态，无需任何网络资源。
+// ══════════════════════════════════════════════════════════
+
+function installFakeVideo(el, durationSec) {
+  let t = 0;
+  let paused = true;
+  let ended = false;
+  let rate = 1;
+  let src = 'mock://lesson/0';
+  let timer = null;
+
+  const def = (name, getter, setter) => {
+    const desc = { get: getter, configurable: true };
+    if (setter) desc.set = setter;
+    Object.defineProperty(el, name, desc);
+  };
+
+  def('duration', () => durationSec);
+  def('currentTime', () => t, (v) => { t = Number(v) || 0; });
+  def('paused', () => paused);
+  def('ended', () => ended);
+  def('readyState', () => 4);
+  def('networkState', () => 1);
+  def('currentSrc', () => src);
+  def('src', () => src);
+  def('playbackRate', () => rate, (v) => { rate = Math.max(0.25, Number(v) || 1); });
+  def('defaultPlaybackRate', () => rate, (v) => { rate = Math.max(0.25, Number(v) || 1); });
+
+  el.play = function () {
+    paused = false;
+    ended = false;
+    startLoop();
+    el.dispatchEvent(new Event('play'));
+    return Promise.resolve();
+  };
+
+  el.pause = function () {
+    const was = paused;
+    paused = true;
+    if (!was) el.dispatchEvent(new Event('pause'));
+  };
+
+  el.load = function () { /* noop */ };
+
+  function startLoop() {
+    if (timer) return;
+    let last = performance.now();
+    timer = setInterval(() => {
+      const now = performance.now();
+      const dt = (now - last) / 1000;
+      last = now;
+      if (paused) return;
+
+      t = Math.min(t + dt * rate, durationSec);
+      el.dispatchEvent(new Event('timeupdate'));
+
+      if (t >= durationSec && !ended) {
+        ended = true;
+        paused = true;
+        el.dispatchEvent(new Event('ended'));
+      }
+    }, 250);
+  }
+
+  return {
+    reset(newSrc, dur) {
+      src = newSrc;
+      t = 0;
+      ended = false;
+      paused = true;
+      durationSec = dur;
+      el.dispatchEvent(new Event('loadedmetadata'));
+    },
+    seek(v) { t = Math.min(Math.max(0, v), durationSec); },
+    get time() { return t; },
+    get dur() { return durationSec; },
+    get isPaused() { return paused; },
+  };
+}
+
+// ══════════════════════════════════════════════════════════
+//  题库
+// ══════════════════════════════════════════════════════════
+
+const QUESTION_BANK = [
+  {
+    stem: '以下哪个是 HTTP 协议的默认端口？',
+    options: ['21', '80', '443', '8080'],
+    answer: [1],
+    multi: false,
+  },
+  {
+    stem: 'TCP 是面向连接的传输层协议。',
+    options: ['正确', '错误'],
+    answer: [0],
+    multi: false,
+  },
+  {
+    stem: '以下哪些属于 HTTP 请求方法？',
+    options: ['GET', 'POST', 'PUT', 'FETCH'],
+    answer: [0, 1, 2],
+    multi: true,
+  },
+  {
+    stem: '下列哪一项不是面向对象编程的基本特性？',
+    options: ['封装', '继承', '多态', '编译'],
+    answer: [3],
+    multi: false,
+  },
+  {
+    stem: '数据库事务的四大特性包括以下哪些？',
+    options: ['原子性', '一致性', '隔离性', '持久性'],
+    answer: [0, 1, 2, 3],
+    multi: true,
+  },
+  {
+    stem: '在 TCP 三次握手中，客户端发送的第一个报文段的标志位是？',
+    options: ['ACK', 'SYN', 'FIN', 'RST'],
+    answer: [1],
+    multi: false,
+  },
+];
+
+// ══════════════════════════════════════════════════════════
+//  课程结构
+// ══════════════════════════════════════════════════════════
+
+const LESSONS = [
+  { id: 0, title: '1.1 计算机网络概述', dur: 32, quizzes: [7, 19] },
+  { id: 1, title: '1.2 传输层协议', dur: 28, quizzes: [6, 15] },
+  { id: 2, title: '1.3 应用层与 HTTP', dur: 26, quizzes: [5, 14] },
+  { id: 3, title: '2.1 面向对象基础', dur: 24, quizzes: [6, 13] },
+  { id: 4, title: '2.2 数据库事务', dur: 22, quizzes: [5, 12] },
+];
+
+const el = (id) => document.getElementById(id);
+const playerEl = el('player');
+const fake = installFakeVideo(playerEl, LESSONS[0].dur);
+
+let currentLesson = 0;
+let done = new Set();
+let firedQuizzes = new Set();
+let activeQuiz = null;      // { q, index, picked:Set }
+let autoRun = true;
+
+// ── 渲染目录 ──────────────────────────────────────────────
+
+function renderCatalogue() {
+  const box = el('catalogue');
+  box.innerHTML = '';
+  LESSONS.forEach((L) => {
+    const d = document.createElement('div');
+    d.className = 'clearfix video' + (L.id === currentLesson ? ' current_play' : '');
+    d.dataset.lessonId = String(L.id);
+    d.innerHTML =
+      (done.has(L.id) ? '<span class="time_icofinish">✔</span>' : '') +
+      '<span class="video_titbox">' + L.title + '</span>' +
+      '<span class="dur">' + L.dur + 's</span>';
+    d.addEventListener('click', () => switchLesson(L.id));
+    box.appendChild(d);
+  });
+}
+
+function switchLesson(id) {
+  if (id === currentLesson) return;
+  if (activeQuiz) closeQuiz(false);
+  currentLesson = id;
+  const L = LESSONS[id];
+  fake.reset('mock://lesson/' + id, L.dur);
+  firedQuizzes.clear();
+  el('lessonTitle').textContent = L.title;
+  el('screenText').textContent = '模拟播放器 · ' + L.title;
+  renderCatalogue();
+  if (autoRun) setTimeout(() => playerEl.play().catch(() => {}), 300);
+}
+
+// ── 弹题 ─────────────────────────────────────────────────
+
+function pickQuestion() {
+  return QUESTION_BANK[Math.floor(Math.random() * QUESTION_BANK.length)];
+}
+
+function fireQuiz() {
+  if (activeQuiz) return;
+  const q = pickQuestion();
+  activeQuiz = { q, picked: new Set(), done: false };
+
+  el('quizStem').textContent = (q.multi ? '【多选题】' : '【单选题】') + q.stem;
+  const box = el('quizOptions');
+  box.innerHTML = '';
+  q.options.forEach((text, i) => {
+    const li = document.createElement('li');
+    li.className = 'subject_node_item';
+    li.dataset.idx = String(i);
+    li.innerHTML = '<span class="tag">' + 'ABCD'[i] + '</span><span>' + text + '</span>';
+    li.addEventListener('click', () => {
+      if (!activeQuiz || activeQuiz.done) return;
+      if (activeQuiz.picked.has(i)) {
+        activeQuiz.picked.delete(i);
+        li.classList.remove('active');
+      } else {
+        if (!q.multi) {
+          activeQuiz.picked.clear();
+          box.querySelectorAll('.subject_node_item').forEach((n) => n.classList.remove('active'));
+        }
+        activeQuiz.picked.add(i);
+        li.classList.add('active');
+      }
+    });
+    box.appendChild(li);
+  });
+
+  el('quizFeedback').textContent = '';
+  el('quizFeedback').className = 'subject_feedback';
+  el('quizSubmit').disabled = false;
+  el('quizWrap').style.display = 'flex';
+  el('rQuiz').textContent = q.multi ? '多选题弹出' : '单选题弹出';
+
+  // 真机上弹题出现时视频会被平台暂停
+  playerEl.pause();
+}
+
+function closeQuiz(answered) {
+  el('quizWrap').style.display = 'none';
+  el('rQuiz').textContent = answered ? '已答对' : '已关闭';
+  activeQuiz = null;
+  if (autoRun && answered) {
+    setTimeout(() => playerEl.play().catch(() => {}), 500);
+  }
+}
+
+function submitQuiz() {
+  if (!activeQuiz || activeQuiz.done) return;
+  const { q, picked } = activeQuiz;
+
+  if (!picked.size) {
+    el('quizFeedback').textContent = '请先选择一个选项';
+    el('quizFeedback').className = 'subject_feedback bad';
+    return;
+  }
+
+  const a = Array.from(picked).sort((x, y) => x - y);
+  const b = q.answer.slice().sort((x, y) => x - y);
+  const ok = a.length === b.length && a.every((v, i) => v === b[i]);
+
+  if (ok) {
+    activeQuiz.done = true;
+    el('quizFeedback').textContent = '回答正确';
+    el('quizFeedback').className = 'subject_feedback ok';
+    el('quizSubmit').disabled = true;
+    setTimeout(() => closeQuiz(true), 1600);
+  } else {
+    el('quizFeedback').textContent = '回答错误';
+    el('quizFeedback').className = 'subject_feedback bad';
+    // 真机上答错会清空选择要求重选
+    setTimeout(() => {
+      if (!activeQuiz || activeQuiz.done) return;
+      activeQuiz.picked.clear();
+      el('quizOptions').querySelectorAll('.subject_node_item').forEach((n) => n.classList.remove('active'));
+      el('quizFeedback').textContent = '';
+      el('quizFeedback').className = 'subject_feedback';
+    }, 1200);
+  }
+}
+
+// ── 主循环 ───────────────────────────────────────────────
+
+setInterval(() => {
+  const L = LESSONS[currentLesson];
+  el('rTime').textContent = fake.time.toFixed(1) + ' / ' + fake.dur.toFixed(1) + ' s';
+  el('rState').textContent = fake.isPaused ? '暂停' : '播放中';
+  el('rRate').textContent = playerEl.playbackRate;
+
+  // 扩展接管后会把播放器静音（插件默认 mute=true），这是最容易观测的接管信号。
+  // 本页刻意不在 <video> 上写 muted 属性，让这个信号保持干净。
+  el('rHook').textContent = playerEl.muted ? '已接管' : '未接管';
+
+  // 反检测状态：只要「不可信事件」计数保持 0，就说明扩展的点击没被识破
+  const rt = el('rTrust');
+  if (snoopHits === 0) {
+    rt.textContent = '未检出合成事件 · click ' + clickTotal;
+    rt.style.color = '#3fb950';
+  } else {
+    rt.textContent = '检出合成事件 ' + snoopHits + ' 次 · click ' + clickTotal;
+    rt.style.color = '#f85149';
+  }
+
+  // 诊断行：说明为什么必须走 CDP，并显示最近几次点击的落点
+  const d = Object.getOwnPropertyDescriptor(new Event('x'), 'isTrusted');
+  el('rDiag').textContent = 'isTrusted 在实例上(cfg=false，只能走 CDP) · 落点 '
+    + (clickSpots.length ? clickSpots.join(' / ') : '（暂无）');
+
+  // 到点出题
+  if (autoRun && !activeQuiz) {
+    for (const mark of L.quizzes) {
+      if (firedQuizzes.has(mark)) continue;
+      if (fake.time >= mark) {
+        firedQuizzes.add(mark);
+        fireQuiz();
+        break;
+      }
+    }
+  }
+
+  // 播完标记完成
+  if (playerEl.ended && !done.has(currentLesson)) {
+    done.add(currentLesson);
+    renderCatalogue();
+    el('rState').textContent = '本章结束';
+  }
+}, 250);
+
+// ── 控件 ─────────────────────────────────────────────────
+
+el('btnPlay').addEventListener('click', () => {
+  if (fake.isPaused) playerEl.play().catch(() => {});
+  else playerEl.pause();
+});
+
+el('btnNearEnd').addEventListener('click', () => {
+  fake.seek(Math.max(0, fake.dur - 3));
+  playerEl.dispatchEvent(new Event('timeupdate'));
+});
+
+el('btnFireQuiz').addEventListener('click', fireQuiz);
+
+el('btnAuto').addEventListener('click', (e) => {
+  autoRun = !autoRun;
+  e.target.textContent = '自动跑：' + (autoRun ? '开' : '关');
+});
+
+el('quizSubmit').addEventListener('click', submitQuiz);
+el('quizClose').addEventListener('click', () => closeQuiz(false));
+
+// ── 反检测探针 ────────────────────────────────────────────
+//
+// 和 wisdom-mooc 学习页里那段检测逻辑同构（从 index-OsQXRfDj.js 逆出来的）：
+//   document.getElementById('container')
+//     .addEventListener('click', e => {
+//       e.preventDefault();
+//       e instanceof Event && (e.isTrusted || ve(...));   // 假 → 报「检测到异常脚本」
+//     }, true);
+//
+// 这里数一数被判定为「不可信」的事件有多少个 —— 与平台那两处判定完全同构。
+// 扩展如果走 CDP 派发点击，事件在浏览器层面就是真的，这个计数会一直保持 0。
+let snoopHits = 0;    // 被判定为合成事件的次数
+let clickTotal = 0;   // 落在页面上的 click 总数（用户 + 扩展）
+const clickSpots = []; // 最近几次点击的落点坐标，用来判断 CDP 有没有打偏
+function snoop(e) {
+  if (!(e instanceof Event)) return;
+  if (e.type === 'click') {
+    clickTotal++;
+    // 记落点 + 命中的元素，用来判断 CDP 到底点到了哪里
+    const t = e.target;
+    const who = (t && (typeof t.className === 'string' && t.className
+      ? t.className
+      : t.tagName)) || '?';
+    clickSpots.push(Math.round(e.clientX) + ',' + Math.round(e.clientY) + '→' + String(who).slice(0, 18));
+    if (clickSpots.length > 4) clickSpots.shift();
+  }
+  if (!e.isTrusted) snoopHits++;
+}
+document.addEventListener('click', snoop, true);
+document.addEventListener('pointerdown', snoop, true);
+
+// 初始化
+el('lessonTitle').textContent = LESSONS[0].title;
+el('screenText').textContent = '模拟播放器 · ' + LESSONS[0].title;
+renderCatalogue();
+setTimeout(() => playerEl.play().catch(() => {}), 800);
+
+// 暴露给调试
+window.__MOCK__ = {
+  fake, playerEl, LESSONS, QUESTION_BANK,
+  get activeQuiz() { return activeQuiz; },
+  fireQuiz, switchLesson,
+};
+</script>
+</body>
+</html>

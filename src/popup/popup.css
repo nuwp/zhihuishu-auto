@@ -1,0 +1,369 @@
+/* 知到自动助手 — popup 样式 */
+
+* { box-sizing: border-box; }
+
+:root {
+  --bg: #0e1117;
+  --card: #161b24;
+  --card-2: #1c2330;
+  --line: #263040;
+  --fg: #e6edf3;
+  --fg-2: #8b98a8;
+  --accent: #4f9cf9;
+  --ok: #3fb950;
+  --warn: #d29922;
+  --danger: #f85149;
+  --radius: 10px;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font: 12.5px/1.5 "PingFang SC", "Microsoft YaHei", "Segoe UI", system-ui, sans-serif;
+}
+
+.wrap {
+  width: 384px;
+  max-height: 588px;
+  overflow-y: auto;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.wrap::-webkit-scrollbar { width: 8px; }
+.wrap::-webkit-scrollbar-thumb { background: #2a3444; border-radius: 4px; }
+.wrap::-webkit-scrollbar-track { background: transparent; }
+
+/* ── 头部 ───────────────────────────── */
+
+.head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 2px 2px 4px;
+}
+
+.brand { display: flex; align-items: center; gap: 8px; }
+
+.brand h1 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+  letter-spacing: .3px;
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--fg-2);
+  box-shadow: 0 0 0 0 rgba(79, 156, 249, .5);
+  transition: background .2s;
+}
+
+.dot.on {
+  background: var(--ok);
+  animation: pulse 2s infinite;
+}
+
+.dot.quiz { background: var(--warn); animation: pulse 1s infinite; }
+.dot.err { background: var(--danger); }
+
+@keyframes pulse {
+  0%   { box-shadow: 0 0 0 0 rgba(63, 185, 80, .55); }
+  70%  { box-shadow: 0 0 0 6px rgba(63, 185, 80, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(63, 185, 80, 0); }
+}
+
+/* ── 开关 ───────────────────────────── */
+
+.switch { position: relative; display: inline-block; cursor: pointer; }
+.switch input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.switch .track {
+  display: block;
+  width: 40px;
+  height: 22px;
+  background: #2a3444;
+  border-radius: 11px;
+  transition: background .18s;
+  position: relative;
+}
+
+.switch .knob {
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #7c8798;
+  transition: transform .18s, background .18s;
+}
+
+.switch input:checked + .track { background: rgba(79, 156, 249, .28); }
+.switch input:checked + .track .knob { transform: translateX(18px); background: var(--accent); }
+
+/* ── 卡片 ───────────────────────────── */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+}
+
+.cardTitle {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--fg-2);
+  letter-spacing: .6px;
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+
+.badge {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 20px;
+  background: #223047;
+  color: var(--accent);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.badge.playing { background: rgba(63, 185, 80, .16); color: var(--ok); }
+.badge.quizzing { background: rgba(210, 153, 34, .16); color: var(--warn); }
+.badge.switching { background: rgba(79, 156, 249, .16); color: var(--accent); }
+.badge.done { background: rgba(139, 152, 168, .18); color: var(--fg-2); }
+.badge.idle { background: #223047; color: var(--fg-2); }
+
+.muted { color: var(--fg-2); font-size: 11.5px; }
+.ellipsis { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.progress {
+  height: 6px;
+  background: #202836;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: 8px;
+}
+
+.bar {
+  height: 100%;
+  width: 0;
+  background: linear-gradient(90deg, #3d7dd8, var(--accent));
+  border-radius: 3px;
+  transition: width .35s ease;
+}
+
+.meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11.5px;
+  color: var(--fg-2);
+  margin-top: 4px;
+}
+
+.meta b { color: var(--fg); font-weight: 600; }
+
+/* ── 选项行 ─────────────────────────── */
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 0;
+  cursor: pointer;
+  font-size: 12px;
+  color: #cbd5e1;
+  user-select: none;
+}
+
+.line:hover { color: var(--fg); }
+
+.line input[type="checkbox"] {
+  appearance: none;
+  width: 15px;
+  height: 15px;
+  flex: 0 0 15px;
+  border: 1.5px solid #3a4658;
+  border-radius: 4px;
+  background: #131922;
+  position: relative;
+  cursor: pointer;
+  transition: border-color .15s, background .15s;
+}
+
+.line input[type="checkbox"]:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+
+.line input[type="checkbox"]:checked::after {
+  content: "";
+  position: absolute;
+  left: 4px;
+  top: 1px;
+  width: 4px;
+  height: 8px;
+  border: solid #0e1117;
+  border-width: 0 2px 2px 0;
+  transform: rotate(42deg);
+}
+
+.slider-line { cursor: default; }
+.slider-line .lbl { flex: 0 0 auto; color: var(--fg-2); font-size: 11.5px; min-width: 74px; }
+
+input[type="range"] {
+  appearance: none;
+  flex: 1;
+  height: 4px;
+  background: #2a3444;
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid var(--card);
+  cursor: pointer;
+}
+
+.val { flex: 0 0 auto; min-width: 38px; text-align: right; color: var(--fg); font-size: 11.5px; }
+
+/* 下拉：站点选择用 */
+.select {
+  flex: 1;
+  padding: 4px 6px;
+  font-family: inherit;
+  font-size: 11.5px;
+  color: var(--fg);
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  outline: none;
+  cursor: pointer;
+}
+
+.select:hover { border-color: #35425a; }
+.select:focus { border-color: var(--accent); }
+
+/* 段说明：给「网页 AI 抢答」这种有前提条件的开关做注释 */
+.hint {
+  margin-top: 6px;
+  padding: 7px 8px;
+  font-size: 10.8px;
+  line-height: 1.6;
+  color: var(--fg-2);
+  background: #10151d;
+  border-radius: 7px;
+}
+
+.hint b { color: #cbd5e1; font-weight: 600; }
+
+#aiPill { font-size: 10.5px; text-transform: none; letter-spacing: 0; }
+#aiPill.busy { color: var(--warn); }
+#aiPill.on { color: var(--ok); }
+#aiPill.err { color: var(--danger); }
+#aiPill.shot { cursor: pointer; text-decoration: underline dotted currentColor; }
+#aiPill.shot:hover { filter: brightness(1.25); }
+
+.mini { display: flex; align-items: center; gap: 4px; cursor: pointer; text-transform: none; letter-spacing: 0; }
+.mini input { accent-color: var(--accent); }
+
+/* ── 按钮 ───────────────────────────── */
+
+.btns { display: flex; flex-wrap: wrap; gap: 6px; }
+.btns + .btns { margin-top: 6px; }
+
+.btn {
+  flex: 1 1 calc(33.333% - 4px);
+  min-width: 96px;
+  padding: 7px 6px;
+  font-size: 11.5px;
+  font-family: inherit;
+  color: var(--fg);
+  background: var(--card-2);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s, transform .08s;
+  white-space: nowrap;
+}
+
+.btn:hover { background: #232c3b; border-color: #35425a; }
+.btn:active { transform: scale(.97); }
+.btn.ghost { background: transparent; color: var(--fg-2); }
+.btn.ghost:hover { background: var(--card-2); color: var(--fg); }
+.btn.danger:hover { border-color: var(--danger); color: var(--danger); }
+
+/* ── 日志 ───────────────────────────── */
+
+.logWrap {
+  position: relative;
+}
+
+.logs {
+  margin: 0;
+  max-height: 140px;
+  overflow-y: auto;
+  font: 11px/1.55 "Cascadia Mono", Consolas, "SF Mono", Menlo, monospace;
+  color: #9aa7b8;
+  white-space: pre-wrap;
+  word-break: break-all;
+  background: #10151d;
+  border-radius: 7px;
+  padding: 8px;
+}
+
+/* 「↓ 最新」：只在用户往上翻、暂停跟随时出现 */
+.logFollow {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  padding: 3px 9px;
+  font-size: 10.5px;
+  color: #cfe0ff;
+  background: #1d3a63;
+  border: 1px solid #2f5c96;
+  border-radius: 999px;
+  cursor: pointer;
+}
+.logFollow:hover { background: #26497a; }
+.logFollow[hidden] { display: none; }
+
+.logs::-webkit-scrollbar { width: 6px; }
+.logs::-webkit-scrollbar-thumb { background: #2a3444; border-radius: 3px; }
+.logs .ok { color: var(--ok); }
+.logs .warn { color: var(--warn); }
+.logs .debug { color: #5b6675; }
+.logs .time { color: #4a5568; }
+
+/* ── 页脚 ───────────────────────────── */
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10.5px;
+  color: #4a5568;
+  padding: 0 2px 4px;
+}
+
+.foot #tabUrl { max-width: 200px; }

@@ -1,0 +1,7 @@
+# 仓库里统一用 LF —— 免得 Windows 上编辑一次就把整个文件标成"改动"。
+# （这一轮排查问题时，"整个文件都变了"的 diff 会淹没真正的改动。）
+* text=auto eol=lf
+
+*.png binary
+*.ico binary
+*.jpg binary

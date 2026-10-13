@@ -1,0 +1,597 @@
+/**
+ * quiz-detect.test.js — 弹题探测的"防误判"（jsdom）
+ *
+ * 起因：目录里的**章节标题**被当成了弹题题干，整段发给公网 AI 问答案。
+ * 用户看到的现象是「会把章节名当作问题发出去」：
+ *
+ *   直接说出答案，不用解析。
+ *   题目：第一章: Philosophy
+ *   A. 第零章: Introduction
+ *   B. 第五章: Art: Painting
+ *   ...
+ *
+ * 根因不是解析，是**探测太宽**：原来的判据只看「有几个像选项的元素 +
+ * 有个像提交的按钮 + 文本里有"选择/以下"这类词」，而侧边目录正好长这样。
+ *
+ * 现在有两道闸门，这个文件把它们钉住：
+ *   ① looksLikeStem —— 题干必须有"像问题"的信号（问号或疑问词）
+ *   ② belongsToPlaylist —— 候选自己或它的选项落在目录结构里，直接出局
+ *
+ * 运行： node tests/quiz-detect.test.js
+ */
+'use strict';
+
+const fs = require('fs');
+const path = require('path');
+
+const ROOT = path.resolve(__dirname, '..');
+
+function resolveJsdom() {
+  const candidates = [
+    process.env.ZHS_JSDOM,
+    path.join(process.env.TEMP || '/tmp', 'zhs-jsdom', 'node_modules'),
+    path.join(ROOT, 'node_modules'),
+  ].filter(Boolean);
+  for (const c of candidates) {
+    try { return require(path.join(c, 'jsdom')); } catch (e) { /* 试下一个 */ }
+  }
+  try { return require('jsdom'); } catch (e) { /* 到底了 */ }
+  console.error('\n找不到 jsdom。安装：npm install jsdom --prefix "%TEMP%\\zhs-jsdom"\n');
+  process.exit(2);
+}
+
+const { JSDOM } = resolveJsdom();
+
+let pass = 0;
+let fail = 0;
+const failures = [];
+
+function check(name, fn) {
+  try {
+    fn();
+    pass++;
+    console.log('  \x1b[32m✓\x1b[0m ' + name);
+  } catch (e) {
+    fail++;
+    failures.push({ name, err: e });
+    console.log('  \x1b[31m✗\x1b[0m ' + name + '\n      ' + e.message);
+  }
+}
+function eq(a, b, msg) {
+  const sa = JSON.stringify(a);
+  const sb = JSON.stringify(b);
+  if (sa !== sb) throw new Error((msg || 'not equal') + '  got=' + sa + ' want=' + sb);
+}
+function ok(v, msg) { if (!v) throw new Error(msg || 'expected truthy'); }
+
+/** 只装探测需要的那几个模块 */
+function makeEnv(innerHtml) {
+  const dom = new JSDOM('<!DOCTYPE html><html><body>' + innerHtml + '</body></html>', {
+    pretendToBeVisual: true,
+    url: 'https://www.zhihuishu.com/study/x',
+  });
+  const win = dom.window;
+  win.chrome = {
+    storage: { local: { get: () => Promise.resolve({ config: {} }), set: () => Promise.resolve() }, onChanged: { addListener() {} } },
+    runtime: { id: 't', onMessage: { addListener() {} }, sendMessage() {}, lastError: null },
+  };
+  win.Element.prototype.getBoundingClientRect = function () {
+    let st = null;
+    try { st = win.getComputedStyle(this); } catch (e) { st = null; }
+    if (st && (st.display === 'none' || st.visibility === 'hidden')) {
+      return { x: 0, y: 0, width: 0, height: 0, top: 0, left: 0, right: 0, bottom: 0, toJSON() { return this; } };
+    }
+    return { x: 100, y: 100, width: 260, height: 36, top: 100, left: 100, right: 360, bottom: 136, toJSON() { return this; } };
+  };
+  win.Element.prototype.scrollIntoView = function () { /* jsdom 没有 */ };
+
+  for (const rel of [
+    'src/shared/defaults.js',
+    'src/content/dom.js',
+    'src/content/config.js',
+    'src/content/bank.js',
+    'src/content/quiz.js',
+  ]) {
+    const code = fs.readFileSync(path.join(ROOT, rel), 'utf8');
+    // eslint-disable-next-line no-new-func
+    new win.Function('window', 'self', 'document', 'location', code)(win, win, win.document, win.location);
+  }
+  return { dom, win, NS: win.__ZHS };
+}
+
+/** 跑一次探测，返回 quiz 或 null */
+function detect(innerHtml) {
+  const env = makeEnv(innerHtml);
+  const solver = new env.NS.QuizSolver();
+  let q = null;
+  try { q = solver.detect(); } catch (e) { q = { __err: e.message }; }
+  return { q, env };
+}
+
+console.log('\n\x1b[1m知到自动助手 — 弹题探测防误判（jsdom）\x1b[0m\n');
+
+// ── [1] looksLikeStem ────────────────────────────────────
+console.log('\x1b[1m[1] 「像问题吗」的判据\x1b[0m');
+
+const { NS: U } = makeEnv('<div></div>');
+const looks = U.quizUtils.looksLikeStem;
+const title = U.quizUtils.looksLikeTitle;
+
+check('真题干认得出来', () => {
+  [
+    '以下哪个是 HTTP 协议的默认端口？',
+    '下列说法正确的是',
+    'TCP 是面向连接的传输层协议。',
+    '以下哪些属于 HTTP 请求方法？',
+    '在 TCP 三次握手中，客户端发送的第一个报文段的标志位是？',
+    '数据库事务的四大特性包括以下哪些',
+    'Which chapter discusses Confucianism?',
+    '1、下列哪个选项是正确的？',
+    '在我国，增值税的税率是 13%。',          // 陈述型判断题
+    '下列哪一项不是面向对象编程的基本特性？',
+  ].forEach((t) => ok(looks(t), '漏判了真题干：' + JSON.stringify(t)));
+});
+
+check('章节标题不会被当成题干', () => {
+  [
+    '第一章: Philosophy',
+    '第零章: Introduction',
+    '第五章: Art: Painting',
+    '第十章: Science and Technology',
+    '1.2.3 Benevolence in the Modern World',
+    '1.2 Confucianism',
+    'Chapter 5: Art',
+    '第二章 儒家思想',
+  ].forEach((t) => eq(looks(t), false, '把标题当题干了：' + JSON.stringify(t)));
+});
+
+check('短碎片不算题干', () => {
+  ['第 1 题', '<div>', '1.2', 'ABC'].forEach((t) => {
+    eq(looks(t), false, JSON.stringify(t));
+  });
+});
+
+check('站点自己的免责声明永远不算题干', () => {
+  // 真踩过：这句被当成题干发出去问答案了 ——
+  //   直接说出答案，不用解析。
+  //   题目：以下所有内容均由AI生成请注意甄别
+  //   A. A 对
+  //   B. B 错
+  // 它能通过原来的闸门是因为带「以下」（像疑问词）、
+  // 长度又落在 10~40 的"陈述句兜底"区间里。
+  [
+    '以下所有内容均由AI生成请注意甄别',
+    '以上内容由AI生成，仅供参考',
+    '本内容由 AI 生成，请注意甄别',
+    '本页内容仅供学习交流',
+    '本课程内容仅供学习参考',
+    '回答由 AI 生成，仅供参考',
+    '内容以官方发布为准',
+    'Generated by AI, for reference only',
+    '如有侵权请联系删除',
+  ].forEach((t) => {
+    eq(looks(t), false, '把站点提示语当题干了：' + JSON.stringify(t));
+    ok(U.quizUtils.looksLikeDisclaimer(t), '免责声明判据没认出来：' + JSON.stringify(t));
+  });
+});
+
+check('免责声明判据不会误伤真题干', () => {
+  [
+    '以下哪个是 HTTP 协议的默认端口？',
+    '下列说法正确的是',
+    '本课程主要讨论了哪几种跨文化礼赠策略？',
+    'The unparalleled use of images in Chinese classic poetry has exerted deep impacts on Imagism.',
+  ].forEach((t) => {
+    eq(U.quizUtils.looksLikeDisclaimer(t), false, '误伤了真题干：' + JSON.stringify(t));
+  });
+});
+
+check('英语课的长判断题要认得出来（长度不能卡在 40）', () => {
+  // 真踩过：这句被漏判了 ——
+  //   "The unparalleled use of 'images' in Chinese classic poetry has
+  //    exerted deep impacts on Imagism. ( )"
+  // 它超过 40 个字符，而以前的陈述句兜底把上限设在 40，
+  // 于是这道题永远检测不到，直接被跳过。
+  [
+    'The unparalleled use of images in Chinese classic poetry has exerted deep impacts on Imagism.',
+    'Learned the criteria and taboos for selecting the national presents.',
+    'Cross-cultural communication requires an understanding of local etiquette.',
+    'In Chinese culture, the color red symbolizes good fortune and happiness.',
+  ].forEach((t) => ok(looks(t), '漏判了英语题干：' + JSON.stringify(t)));
+
+  // 但"长"不能变成"什么都收"：长标题仍然要挡住 ——
+  // 它是个短语、没有句末标点，而真题干是一句完整的话
+  eq(looks('Chapter 5: Art: Painting and the Long History of Western Aesthetics'),
+    false, '长标题被当成题干了');
+});
+
+check('截图里的两个真实样本：一个不能再问出去，一个不能再漏掉', () => {
+  // 用户实际遇到的：站点提示语被当成题干发了出去，而真正的题被漏掉
+  eq(looks('以下所有内容均由AI生成请注意甄别'), false,
+    '站点提示语又被当成题干了 —— 它会整段发给公网 AI');
+  ok(looks('The unparalleled use of "images" in Chinese classic poetry has exerted deep impacts on Imagism. ( )'),
+    '英语判断题又漏判了');
+});
+
+check('句子里带冒号 ≠ 标题（这条漏掉了一整道题）', () => {
+  // 踩过：`In Western dining culture, it is customary to: ( )`
+  // 句中的那个冒号让 title 判据把它当成标题 → 整道题漏判，
+  // 用户看到的现象就是「题目没有识别到」。
+  // 判据是**结尾**：标题以冒号收尾（"第一章: Philosophy"），
+  // 句子以标点或 `( )` 收尾。
+  ok(looks('In Western dining culture, it is customary to: ( )'),
+    '带冒号的英语句子被当成标题漏掉了');
+  ok(looks('She said: read the manual before you start.'),
+    '带冒号的英文陈述句被漏掉了');
+  ok(looks('以下说法正确的是：（ ）'),
+    '带冒号的中文题被漏掉了');
+
+  // 但标题仍然要挡住 —— 它们以冒号收尾
+  eq(looks('第一章: Philosophy'), false, '章节标题');
+  eq(looks('Chapter 5: Art'), false, '章节标题');
+  eq(title('In Western dining culture, it is customary to: ( )'), false,
+    '带答题括号的句子不该被判成标题');
+});
+
+// ── [1.5] 选中态三态判据 ─────────────────────────────────
+//
+// 踩过的坑：日志里反复出现
+//   勾选 A → A
+//   选项在提交前被平台重置，补点一轮
+//   选项在提交前被平台重置，补点一轮     ← 同一件事重复报，最后还是判定超时
+// 原因是 isSelected 只认"带分隔符的独立词 + 几个固定 class 名"，
+// 而站点用的是复合名 —— 一条都没命中，于是每轮都"补点"，
+// 而补点那一路还会先 clearSelection（把刚选上的撤掉）。
+console.log('\n\x1b[1m[1.5] 选中态：true / false / null 三态\x1b[0m');
+
+{
+  const env = makeEnv('<div id="x"><div class="opt a"></div><div class="opt b"></div></div>');
+  const solver = new env.NS.QuizSolver();
+  const doc = env.win.document;
+  const mk = (html) => {
+    const host = doc.createElement('div');
+    host.innerHTML = html;
+    doc.body.appendChild(host);
+    return host.firstElementChild;
+  };
+
+  check('复合 class 名里的选中关键词要认得出来（不能再要求"独立单词"）', () => {
+    eq(solver.isSelected(mk('<div class="node_item_active"></div>')), true, 'node_item_active');
+    eq(solver.isSelected(mk('<div class="xxxSelected2"></div>')), true, 'xxxSelected2');
+    eq(solver.isSelected(mk('<div class="choice checked"></div>')), true, 'choice checked');
+    eq(solver.isSelected(mk('<div class="item is-checked"></div>')), true, 'is-checked');
+  });
+
+  check('反义词不能被误判成"已选中"', () => {
+    // inactive 里含 active —— 老写法的关键词匹配会踩这个坑，
+    // 一旦误判成"已选中"，clearSelection 会去把它点掉
+    eq(solver.isSelected(mk('<div class="inactive"></div>')), false, 'inactive');
+    eq(solver.isSelected(mk('<div class="unselected"></div>')), false, 'unselected');
+    eq(solver.isSelected(mk('<div class="unchecked"></div>')), false, 'unchecked');
+  });
+
+  check('aria / data / 内层元素 / 行内样式 这些痕迹都认', () => {
+    eq(solver.isSelected(mk('<div aria-checked="true"></div>')), true, 'aria-checked');
+    eq(solver.isSelected(mk('<div aria-selected="true"></div>')), true, 'aria-selected');
+    eq(solver.isSelected(mk('<div data-selected="true"></div>')), true, 'data-selected');
+    eq(solver.isSelected(mk('<div><i class="icon-selected"></i></div>')), true, '内层 i.icon-selected');
+    eq(solver.isSelected(mk('<div style="border-color: rgb(1,2,3)"></div>')), true, '行内 border');
+    eq(solver.isSelected(mk('<div><input type="radio" checked></div>')), true, '内层 radio');
+  });
+
+  check('**看不出来**要返回 null，而不是硬说 false', () => {
+    // 这一条是这次修复的核心：站点改了一种我们没见过的画法时，
+    // 必须承认"看不出来" —— 否则会陷入"补点 → 再补点 → 判定超时"的空转，
+    // 而且补点那一路会先 clearSelection，把刚选上的撤掉。
+    eq(solver.isSelected(mk('<div class="plain-option"></div>')), null, '认不出来就该是 null');
+  });
+
+  check('明确没选（内层 radio 未勾选）要返回 false', () => {
+    eq(solver.isSelected(mk('<div><input type="radio"></div>')), false);
+  });
+
+  check('verifySelection：有一个"明确没选"才判 false', () => {
+    const q = { options: [mk('<div class="node_item_active"></div>'), mk('<div class="plain"></div>')] };
+    eq(solver.verifySelection(q, [0, 1]), true, '一个选中 + 一个看不出来 ⇒ 该继续提交');
+    eq(solver.selectionUnknown(q, [0, 1]), true, '应当报出"有看不出来的"');
+
+    const q2 = { options: [mk('<div class="plain"></div>'), mk('<div><input type="radio"></div></div>')] };
+    eq(solver.verifySelection(q2, [0, 1]), false, '有一个明确没选 ⇒ 该补点');
+  });
+}
+
+check('目录里的章节条目能被 title 判据认出来', () => {
+  ok(title('第一章: Philosophy'), '第一章: Philosophy');
+  ok(title('1.2.3 Benevolence in the Modern World'), '1.2.3 …');
+  ok(title('1.2 Confucianism'), '1.2 …');
+  // 题干可以是编号开头，但只要有疑问词就不是标题
+  eq(title('1、下列说法正确的是'), false, '带疑问词的编号句不是标题');
+  eq(title('2. 以下哪个是正确的？'), false, '带问号的不是标题');
+});
+
+// ── [2] 侧边目录不会被认成弹题 ───────────────────────────
+console.log('\n\x1b[1m[2] 侧边目录不会被认成弹题\x1b[0m');
+
+// ── [1.8] 提交按钮的文案 ─────────────────────────────────
+//
+// 踩过：判据是**一张精确匹配的清单** `/^(提交|确定|保存|…)$/`，而站点上摆的是
+// 「提交作答」—— 一条都不命中，于是日志报「没找到提交按钮（可能是"点选即提交"
+// 的题型）」，而按钮明明就在眼前（蓝色，写着"提交作答"）。
+// 清单永远列不全站点的写法。
+console.log('\n\x1b[1m[1.8] 提交按钮：按语义认，不按清单认\x1b[0m');
+
+check('常见的提交类文案都要认得出来', () => {
+  // 直接对着按钮文字判据测（用真实的弹题 DOM 走一遍 findSubmit 太重，
+  // 而这里要钉住的恰恰就是"文案"本身）
+  const env = makeEnv(`
+    <div class="el-dialog">
+      <div class="subject_describe">In the late 1930s, Zhang Daqian became active. ( )</div>
+      <ul>
+        <li class="subject_node_item">A 对</li>
+        <li class="subject_node_item">B 错</li>
+      </ul>
+      <button class="submit_btn">提交作答</button>
+    </div>`);
+  const solver = new env.NS.QuizSolver();
+  const dialog = env.win.document.querySelector('.el-dialog');
+
+  const btn = solver.findSubmit(dialog);
+  ok(btn, '「提交作答」没被认成提交按钮 —— 这正是日志里那句"没找到提交按钮"的来源');
+  eq(env.NS.dom.textOf(btn).replace(/\s+/g, ''), '提交作答');
+});
+
+check('各种写法都能认，而且不会认到正文上', () => {
+  const env = makeEnv('<div class="el-dialog"><div id="host"></div></div>');
+  const solver = new env.NS.QuizSolver();
+  const host = env.win.document.getElementById('host');
+  const tried = [
+    '提交', '提交作答', '提交答案', '确认提交', '立即作答', '开始作答', '交卷', '确定', '完成',
+  ];
+  for (const label of tried) {
+    host.innerHTML = '<button>' + label + '</button>';
+    const btn = solver.findSubmit(host);
+    ok(btn, '没认出：' + label);
+    eq(env.NS.dom.textOf(btn).replace(/\s+/g, ''), label);
+  }
+
+  // 正文里含"提交"两个字的一段说明，不该被当成按钮
+  host.innerHTML = '<p>请确认无误后再提交，提交之后不能修改答案，请仔细检查每一题</p>';
+  eq(solver.findSubmit(host), null, '把一段说明文字当成按钮了');
+});
+
+// ── [1.9] 选项该点哪儿 ───────────────────────────────────
+//
+// 踩过：知到的选项是**满宽的一行** `<li class="subject_node_item">`，里面是
+// `<span class="tag">A</span><span>对</span>`，单选框在最左边。
+// 而 realClick 走的是元素**几何中心** —— 落点在右边一大片空白上，
+// 点下去什么都不会发生。表现就是「插件没法自动选择选项」。
+console.log('\n\x1b[1m[1.9] 选项要点"可点部位"，不是整行的几何中心\x1b[0m');
+
+{
+  const env = makeEnv(`
+    <div class="el-dialog">
+      <div class="subject_describe">In the late 1930s, Zhang Daqian became active. ( )</div>
+      <ul>
+        <li class="subject_node_item" id="optA"><span class="tag">A</span><span>对</span></li>
+        <li class="subject_node_item" id="optB"><span class="tag">B</span><span>错</span></li>
+      </ul>
+      <button class="submit_btn">提交作答</button>
+    </div>`);
+  const doc = env.win.document;
+  const A = doc.getElementById('optA');
+  const tag = A.querySelector('.tag');
+
+  check('满宽的一行：点击目标要落在内层的圆圈上，而不是整行中心', () => {
+    const target = env.NS.dom.clickTargetIn(A);
+    ok(target !== A, '仍然在点整行 —— 满宽行的中心是空白，点下去没反应');
+    eq(target, tag, '应当优先点圆圈（.tag）');
+  });
+
+  check('站点用原生控件时，点的是 input / label', () => {
+    const host = doc.createElement('div');
+    host.innerHTML = '<li class="option-item"><input type="radio" id="r1"><label for="r1">北京</label></li>';
+    doc.body.appendChild(host);
+    const row = host.querySelector('.option-item');
+    const target = env.NS.dom.clickTargetIn(row);
+    eq(target.tagName.toLowerCase(), 'input', '原生控件优先点 input');
+  });
+
+  check('没有任何内层线索时退回整行（不硬造一个目标）', () => {
+    const host = doc.createElement('div');
+    host.innerHTML = '<li class="plain-option" id="plain">甲</li>';
+    doc.body.appendChild(host);
+    const row = host.querySelector('#plain');
+    eq(env.NS.dom.clickTargetIn(row), row, '没有内层可点部位时应当退回整行');
+  });
+
+  check('指纹能看出"这一行变了没有"', () => {
+    const host = doc.createElement('div');
+    host.innerHTML = '<li class="opt" style=""><i></i></li>';
+    doc.body.appendChild(host);
+    const row = host.querySelector('.opt');
+    const before = env.NS.dom.signatureOf(row);
+    row.className = 'opt active';
+    const after = env.NS.dom.signatureOf(row);
+    ok(before !== after, 'class 变了，指纹却没变 —— 判"点击生效没有"就全靠它');
+  });
+
+  check('点内层没反应时会自动补一下整行', async () => {
+    const env2 = makeEnv(`
+      <div class="el-dialog">
+        <div class="subject_describe">Which one is the capital of China? ( )</div>
+        <ul>
+          <li class="subject_node_item" id="oa"><span class="tag">A</span><span>北京</span></li>
+          <li class="subject_node_item" id="ob"><span class="tag">B</span><span>上海</span></li>
+        </ul>
+        <button class="submit_btn">提交作答</button>
+      </div>`);
+    const doc2 = env2.win.document;
+    const row = doc2.getElementById('oa');
+    const tag = row.querySelector('.tag');
+    const solver2 = new env2.NS.QuizSolver();
+
+    // jsdom 里没有 debugger 通道，realClick 派发出去的合成点击不一定落到
+    // 元素上 —— 所以这里把 realClick 换成"只会让整行生效"的桩，
+    // 好把被测的那条策略（先内层、没反应再补整行）单独拎出来看。
+    const calls = [];
+    env2.NS.dom.realClick = (el) => {
+      calls.push(el === tag ? 'inner' : (el === row ? 'row' : 'other'));
+      if (el === row) row.className = 'subject_node_item active';   // 只有整行真的生效
+      return true;
+    };
+
+    const okClick = await solver2.clickOption(row);
+
+    check('先点内层，没反应再补整行', () => {
+      eq(calls, ['inner', 'row'], '点击顺序不对：' + JSON.stringify(calls));
+      eq(okClick, true, '补点整行之后应当能看出变化');
+      ok(/active/.test(row.className), '整行没被选中：' + row.className);
+    });
+  });
+}
+const SIDEBAR = `
+  <aside class="catalogue">
+    <div class="catalogue_list">
+      <div class="video_list_item"><span>第零章: Introduction</span></div>
+      <div class="video_list_item"><span>第一章: Philosophy</span></div>
+      <div class="video_list_item"><span>第五章: Art: Painting</span></div>
+      <div class="video_list_item"><span>第六章: Food Culture: Cuisines</span></div>
+      <div class="video_list_item"><span>第七章: Food Culture: Tea Culture</span></div>
+      <div class="video_list_item"><span>第八章: Leisure Entertainment: Tourism</span></div>
+      <div class="video_list_item"><span>第九章: Architecture</span></div>
+      <div class="video_list_item"><span>第十章: Science and Technology</span></div>
+    </div>
+  </aside>`;
+
+check('纯目录 + 章节标题 → 探测结果必须是 null', () => {
+  const { q } = detect(SIDEBAR);
+  eq(q, null, '把目录当成弹题了：' + JSON.stringify(q && q.stem));
+});
+
+check('目录里有"选择/以下"这类词也一样不认', () => {
+  const { q } = detect(`
+    <aside class="catalogue_list">
+      <div class="video_list_item"><span>请选择以下章节开始学习</span></div>
+      <div class="video_list_item"><span>第一章: 以下内容简介</span></div>
+      <div class="video_list_item"><span>第二章: 关于本课程</span></div>
+    </aside>`);
+  eq(q, null, '把目录当成弹题了：' + JSON.stringify(q && q.stem));
+});
+
+// ── [3] 真弹题仍然要认出来 ───────────────────────────────
+console.log('\n\x1b[1m[3] 真弹题不能被连坐\x1b[0m');
+
+check('带问号的弹题正常识别', () => {
+  const { q } = detect(`
+    <div class="el-dialog__wrapper" style="position:fixed;z-index:2001">
+      <div class="el-dialog">
+        <p class="subject_describe">以下哪个是 HTTP 协议的默认端口？</p>
+        <ul>
+          <li class="subject_node_item">A. 21</li>
+          <li class="subject_node_item">B. 80</li>
+          <li class="subject_node_item">C. 443</li>
+          <li class="subject_node_item">D. 8080</li>
+        </ul>
+        <button>提交</button>
+      </div>
+    </div>`);
+  ok(q, '真弹题没认出来');
+  ok(/HTTP/.test(q.stem), '题干不对：' + q.stem);
+  eq(q.options.length, 4, '选项数不对');
+});
+
+check('无问号但有疑问词的弹题也认（"下列说法正确的是"）', () => {
+  const { q } = detect(`
+    <div class="el-dialog__wrapper" style="position:fixed;z-index:2001">
+      <div class="el-dialog">
+        <p class="subject_describe">1、下列说法正确的是</p>
+        <ul>
+          <li class="subject_node_item">A. 甲</li>
+          <li class="subject_node_item">B. 乙</li>
+        </ul>
+        <button>提交</button>
+      </div>
+    </div>`);
+  ok(q, '没认出来');
+  ok(/说法正确/.test(q.stem), '题干不对：' + q.stem);
+});
+
+check('页面里同时有目录和弹题时，认出的是弹题不是目录', () => {
+  const { q } = detect(SIDEBAR + `
+    <div class="el-dialog__wrapper" style="position:fixed;z-index:2001">
+      <div class="el-dialog">
+        <p class="subject_describe">在 TCP 三次握手中，客户端发送的第一个报文段的标志位是？</p>
+        <ul>
+          <li class="subject_node_item">A. ACK</li>
+          <li class="subject_node_item">B. SYN</li>
+          <li class="subject_node_item">C. FIN</li>
+          <li class="subject_node_item">D. RST</li>
+        </ul>
+        <button>提交</button>
+      </div>
+    </div>`);
+  ok(q, '没认出来');
+  ok(/三次握手/.test(q.stem), '认错东西了：' + q.stem);
+  ok(!/Philosophy/.test(q.stem), '把目录标题认成题干了：' + q.stem);
+});
+
+// ── [4] 目录污染下的题干提取 ─────────────────────────────
+console.log('\n\x1b[1m[4] 题干提取不能抓到章节名\x1b[0m');
+
+check('extractStem 会跳过像标题的节点，取真正像问题的那一段', () => {
+  const { dom, NS } = makeEnv(`
+    <div class="el-dialog" id="d">
+      <p class="subject_describe">第一章: Philosophy</p>
+      <p class="subject_describe">以下哪个选项是对的？</p>
+      <ul>
+        <li class="subject_node_item">A. 甲</li>
+        <li class="subject_node_item">B. 乙</li>
+      </ul>
+    </div>`);
+  const solver = new NS.QuizSolver();
+  const dialog = dom.window.document.getElementById('d');
+  const opts = Array.from(dom.window.document.querySelectorAll('.subject_node_item'));
+  const stem = solver.extractStem(dialog, opts);
+  ok(/以下哪个选项是对的/.test(stem), '取错了：' + JSON.stringify(stem));
+  try { dom.window.close(); } catch (e) { /* noop */ }
+});
+
+check('整段都不像问题时返回空串（宁可不答，也不要问错）', () => {
+  const { dom, NS } = makeEnv(`
+    <div class="el-dialog" id="d">
+      <p class="subject_describe">第一章: Philosophy</p>
+      <ul>
+        <li class="subject_node_item">A. 第零章: Introduction</li>
+        <li class="subject_node_item">B. 第五章: Art</li>
+      </ul>
+    </div>`);
+  const solver = new NS.QuizSolver();
+  const dialog = dom.window.document.getElementById('d');
+  const opts = Array.from(dom.window.document.querySelectorAll('.subject_node_item'));
+  eq(solver.extractStem(dialog, opts), '', '不该吐出章节名当题干');
+  eq(solver.build(dialog), null, 'build 应当直接否决');
+  try { dom.window.close(); } catch (e) { /* noop */ }
+});
+
+// ── [5] 出站防线 ─────────────────────────────────────────
+console.log('\x1b[1m[5] 最后一道闸：像章节名的文本不允许发给 AI\x1b[0m');
+
+check('questionKey/建题的闸门在 quiz.js 里（不是靠 AI 那边兜）', () => {
+  const src = fs.readFileSync(path.join(ROOT, 'src/content/quiz.js'), 'utf8');
+  ok(/looksLikeStem/.test(src), '缺少 looksLikeStem');
+  ok(/belongsToPlaylist/.test(src), '缺少目录归属判断');
+  ok(/looksLikeTitle/.test(src), '缺少标题扣分');
+  // 挂到 __ZHS 上，方便排障时在控制台直接试
+  const { NS } = makeEnv('<div></div>');
+  ok(typeof NS.quizUtils.looksLikeStem === 'function', '没导出 looksLikeStem');
+  ok(typeof NS.quizUtils.looksLikeTitle === 'function', '没导出 looksLikeTitle');
+});
+
+console.log('\n' + '─'.repeat(48));
+console.log('  \x1b[32m通过 ' + pass + '\x1b[0m    \x1b[31m失败 ' + fail + '\x1b[0m');
+console.log('─'.repeat(48) + '\n');
+
+if (fail) {
+  failures.forEach((f) => console.log('  ✗ ' + f.name + '\n    ' + (f.err.stack || f.err)));
+  process.exit(1);
+}
